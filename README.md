@@ -4,11 +4,14 @@
 
 ### *Display uploaded files beautifully in Filament forms*
 
+![Laravel Filament FileOutput](https://github.com/user-attachments/assets/031bf175-15e7-4697-98ee-c2385a99b3bd)
+
 [![Latest Version](https://img.shields.io/packagist/v/tigusigalpa/filament-fileoutput.svg?style=flat-square)](https://packagist.org/packages/tigusigalpa/filament-fileoutput)
 [![Total Downloads](https://img.shields.io/packagist/dt/tigusigalpa/filament-fileoutput.svg?style=flat-square)](https://packagist.org/packages/tigusigalpa/filament-fileoutput)
 [![License](https://img.shields.io/packagist/l/tigusigalpa/filament-fileoutput.svg?style=flat-square)](https://packagist.org/packages/tigusigalpa/filament-fileoutput)
 
-A powerful Laravel Filament plugin for displaying uploaded files with support for **private storage**, **multiple files**, and **smart deletion**.
+A powerful Laravel Filament plugin for displaying uploaded files with support for **private storage**, **multiple files
+**, and **smart deletion**.
 
 [Installation](#-installation) • [Quick Start](#-quick-start) • [Features](#-features) • [Examples](#-examples) • [API Reference](#-api-reference)
 
@@ -23,6 +26,7 @@ A powerful Laravel Filament plugin for displaying uploaded files with support fo
 <td width="50%">
 
 ### 🎯 Core Features
+
 - 📦 **Any Storage Disk** - public, private, S3, etc.
 - 🖼️ **Smart Preview** - automatic image detection
 - 📥 **Download Links** - for non-image files
@@ -33,6 +37,7 @@ A powerful Laravel Filament plugin for displaying uploaded files with support fo
 <td width="50%">
 
 ### 🚀 Advanced Features
+
 - 📚 **Multiple Files** - array support out of the box
 - 🎨 **Filament Design** - fully styled components
 - 🌙 **Dark Mode** - complete theme support
@@ -404,6 +409,7 @@ FileOutput::make('preview')->field('file_path')
 **Required** (if `field` not specified)
 
 Specifies the direct path to the file. Supports:
+
 - **String**: Direct file path
 - **Array**: Multiple file paths
 - **Closure**: Dynamic path (can return string or array)
@@ -491,18 +497,21 @@ Shows the delete button (default). Useful for conditional display.
 <td width="33%">
 
 ### 🖼️ Images
+
 Automatic detection of image files (jpg, jpeg, png, gif, bmp, svg, webp, ico) with preview display.
 
 </td>
 <td width="33%">
 
 ### 📄 Documents
+
 Download links for non-image files with filename display.
 
 </td>
 <td width="33%">
 
 ### 🔒 Private Files
+
 Temporary signed URLs or custom download routes for secure access.
 
 </td>
@@ -511,18 +520,21 @@ Temporary signed URLs or custom download routes for secure access.
 <td width="33%">
 
 ### 🌐 Public URLs
+
 Direct display of external file URLs.
 
 </td>
 <td width="33%">
 
 ### 📚 Multiple Files
+
 Automatic array detection with individual previews and delete buttons.
 
 </td>
 <td width="33%">
 
 ### 🔄 Auto-Sync
+
 Smart state updates - removes only deleted files from arrays.
 
 </td>
@@ -569,7 +581,8 @@ This package is open-sourced software licensed under the [MIT license](LICENSE).
 ## 🔗 Links
 
 - **Repository**: [github.com/tigusigalpa/filament-fileoutput](https://github.com/tigusigalpa/filament-fileoutput)
-- **Packagist**: [packagist.org/packages/tigusigalpa/filament-fileoutput](https://packagist.org/packages/tigusigalpa/filament-fileoutput)
+- **Packagist
+  **: [packagist.org/packages/tigusigalpa/filament-fileoutput](https://packagist.org/packages/tigusigalpa/filament-fileoutput)
 - **Issues**: [Report a bug](https://github.com/tigusigalpa/filament-fileoutput/issues)
 
 ---
