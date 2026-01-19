@@ -10,6 +10,183 @@ FileOutput::make('document_preview')
     ->label('Текущий документ')
 ```
 
+## Использование метода path()
+
+### Прямой путь к файлу
+
+```php
+FileOutput::make('contract_preview')
+    ->path('contracts/2024/contract-001.pdf')
+    ->disk('private')
+    ->label('Договор')
+```
+
+### Динамический путь через Closure
+
+```php
+FileOutput::make('user_avatar')
+    ->path(fn ($record) => 'avatars/' . $record->user_id . '.jpg')
+    ->disk('public')
+    ->label('Аватар пользователя')
+```
+
+### Публичный URL
+
+```php
+FileOutput::make('external_file')
+    ->path('https://example.com/files/document.pdf')
+    ->label('Внешний документ')
+```
+
+### Комбинация с условной логикой
+
+```php
+FileOutput::make('file_preview')
+    ->path(function ($record) {
+        if ($record->file_type === 'contract') {
+            return 'contracts/' . $record->file_name;
+        }
+        return 'documents/' . $record->file_name;
+    })
+    ->disk('private')
+    ->label('Документ')
+```
+
+### Множественные файлы через path() с массивом
+
+```php
+// Прямой массив путей
+FileOutput::make('documents_preview')
+    ->path(['contracts/2024/contract-1.pdf', 'contracts/2024/contract-2.pdf'])
+    ->disk('private')
+    ->label('Договоры')
+    ->onDelete(function ($filePath, $disk) {
+        // $filePath - конкретный файл из массива, который удаляется
+        \Storage::disk($disk)->delete($filePath);
+    })
+```
+
+### Множественные файлы через path() с Closure
+
+```php
+FileOutput::make('attachments_preview')
+    ->path(fn ($record) => $record->attachment_paths ?? [])
+    ->field('attachment_paths')  // ВАЖНО: указать field для автообновления
+    ->disk('private')
+    ->label('Вложения')
+    ->onDelete(function ($filePath, $disk) {
+        // $filePath - это ОДИН конкретный файл, который пользователь удаляет
+        \Storage::disk($disk)->delete($filePath);
+        
+        // Плагин автоматически обновит поле 'attachment_paths', удалив только этот файл
+        // Обновлять БД вручную не нужно, если указан field()
+    })
+```
+
+### Важно: onDelete для множественных файлов
+
+```php
+// ✅ ВАРИАНТ 1: С field() - автоматическое обновление состояния
+FileOutput::make('photos_preview')
+    ->path(fn ($record) => $record->photos ?? [])
+    ->field('photos')  // Указываем field для автообновления
+    ->disk('public')
+    ->onDelete(function ($filePath, $disk) {
+        // $filePath - это один конкретный файл
+        \Storage::disk($disk)->delete($filePath);
+        
+        // Обновление БД
+        $currentPhotos = $this->record->photos ?? [];
+        $newPhotos = array_values(array_filter(
+            $currentPhotos,
+            fn($photo) => $photo !== $filePath
+        ));
+        $this->record->update(['photos' => $newPhotos]);
+        
+        // Состояние формы обновится автоматически благодаря field('photos')
+    })
+
+// ✅ ВАРИАНТ 2: Без field() - только path()
+FileOutput::make('photos_preview')
+    ->path(fn ($record) => $record->photos ?? [])
+    ->disk('public')
+    ->onDelete(function ($filePath, $disk) {
+        // $filePath - это один конкретный файл
+        \Storage::disk($disk)->delete($filePath);
+        
+        // Обновляем БД
+        $currentPhotos = $this->record->photos ?? [];
+        $newPhotos = array_values(array_filter(
+            $currentPhotos,
+            fn($photo) => $photo !== $filePath
+        ));
+        $this->record->update(['photos' => $newPhotos]);
+        
+        // ⚠️ ВНИМАНИЕ: Состояние формы НЕ обновится автоматически
+        // Нужно вручную обновить или перезагрузить страницу
+    })
+```
+
+## Множественные файлы
+
+### Базовый пример с множественными файлами
+
+```php
+FileOutput::make('attachments_preview')
+    ->field('attachments')  // Поле содержит массив путей к файлам
+    ->disk('private')
+    ->label('Вложения')
+```
+
+### Полный пример с FileUpload (множественные файлы)
+
+```php
+use Filament\Forms\Components\FileUpload;
+use Tigusigalpa\FileOutput\FileOutput;
+
+public static function form(Form $form): Form
+{
+    return $form
+        ->schema([
+            FileUpload::make('attachments')
+                ->disk('private')
+                ->directory('attachments')
+                ->multiple()  // Разрешить множественные файлы
+                ->maxFiles(10)
+                ->acceptedFileTypes(['application/pdf', 'image/*'])
+                ->label('Загрузить вложения'),
+                
+            FileOutput::make('attachments_preview')
+                ->field('attachments')  // Автоматически определяет массив
+                ->disk('private')
+                ->label('Текущие вложения')
+                ->onDelete(function ($filePath, $disk) {
+                    // $filePath содержит путь к конкретному удаляемому файлу
+                    \Storage::disk($disk)->delete($filePath);
+                    // Состояние поля автоматически обновляется (файл удаляется из массива)
+                }),
+        ]);
+}
+```
+
+### Множественные изображения с галереей
+
+```php
+FileOutput::make('product_images')
+    ->field('images')
+    ->disk('public')
+    ->label('Галерея товара')
+    ->onDelete(function ($filePath, $disk) {
+        // Удаляем оригинал
+        \Storage::disk($disk)->delete($filePath);
+        
+        // Удаляем миниатюры
+        $directory = dirname($filePath);
+        $filename = basename($filePath);
+        \Storage::disk($disk)->delete($directory . '/thumbs/' . $filename);
+    })
+```
+
 ## С приватным диском
 
 ```php
@@ -290,5 +467,73 @@ FileOutput::make('file_preview')
                 'error' => $e->getMessage(),
             ]);
         }
+    })
+```
+
+## Продвинутые примеры с множественными файлами
+
+### Ограничение удаления для множественных файлов
+
+```php
+FileOutput::make('documents_preview')
+    ->field('documents')
+    ->disk('private')
+    ->onDelete(function ($filePath, $disk) {
+        \Storage::disk($disk)->delete($filePath);
+    })
+    ->showDeleteButton(function ($record) {
+        // Показать кнопку удаления только если файлов больше одного
+        $documents = $record->documents ?? [];
+        return is_array($documents) && count($documents) > 1;
+    })
+```
+
+### Множественные файлы с обновлением БД
+
+```php
+FileOutput::make('certificates_preview')
+    ->field('certificates')
+    ->disk('private')
+    ->label('Сертификаты')
+    ->onDelete(function ($filePath, $disk) {
+        // Удаляем файл
+        \Storage::disk($disk)->delete($filePath);
+        
+        // Обновляем массив в БД
+        $currentCertificates = $this->record->certificates ?? [];
+        $newCertificates = array_values(array_filter(
+            $currentCertificates, 
+            fn($cert) => $cert !== $filePath
+        ));
+        
+        $this->record->update([
+            'certificates' => empty($newCertificates) ? null : $newCertificates,
+            'certificates_count' => count($newCertificates),
+        ]);
+        
+        \Filament\Notifications\Notification::make()
+            ->title('Сертификат удален')
+            ->body('Осталось сертификатов: ' . count($newCertificates))
+            ->success()
+            ->send();
+    })
+```
+
+### Смешанный тип файлов (изображения и документы)
+
+```php
+FileOutput::make('mixed_files_preview')
+    ->field('files')
+    ->disk('private')
+    ->label('Файлы проекта')
+    ->onDelete(function ($filePath, $disk) {
+        \Storage::disk($disk)->delete($filePath);
+        
+        // Логирование удаления
+        \Log::info('Project file deleted', [
+            'project_id' => $this->record->id,
+            'file' => $filePath,
+            'user_id' => auth()->id(),
+        ]);
     })
 ```

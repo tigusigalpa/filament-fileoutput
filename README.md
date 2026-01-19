@@ -41,6 +41,35 @@ FileOutput::make('file_preview')
     ->field('document')
 ```
 
+### With Direct Path
+
+```php
+// Using direct path instead of field
+FileOutput::make('file_preview')
+    ->path('documents/contract.pdf')
+    ->disk('private')
+    ->label('Contract')
+```
+
+### With Dynamic Path (Closure)
+
+```php
+FileOutput::make('file_preview')
+    ->path(fn ($record) => $record->file_path)
+    ->disk('private')
+    ->label('Document')
+```
+
+### With Multiple Files
+
+```php
+// Automatically detects and displays multiple files
+FileOutput::make('documents_preview')
+    ->field('documents')  // Field contains array of file paths
+    ->disk('private')
+    ->label('Uploaded Documents')
+```
+
 ### With Delete Callback
 
 ```php
@@ -84,9 +113,41 @@ public static function form(Form $form): Form
 
 > **Note**: When a file is successfully deleted, the plugin automatically clears the state of the linked field (in this example, the `document` field). This means the FileUpload field will also be cleared automatically.
 
+### Multiple Files Example
+
+```php
+use Filament\Forms\Components\FileUpload;
+use Tigusigalpa\FileOutput\FileOutput;
+
+public static function form(Form $form): Form
+{
+    return $form
+        ->schema([
+            FileUpload::make('attachments')
+                ->disk('private')
+                ->directory('attachments')
+                ->multiple()  // Allow multiple files
+                ->maxFiles(5)
+                ->label('Upload Attachments'),
+                
+            FileOutput::make('attachments_preview')
+                ->field('attachments')  // Automatically detects array
+                ->disk('private')
+                ->label('Current Attachments')
+                ->onDelete(function ($filePath, $disk) {
+                    // $filePath contains the specific file being deleted
+                    Storage::disk($disk)->delete($filePath);
+                    // Field state is automatically updated (file removed from array)
+                }),
+        ]);
+}
+```
+
+> **Multiple Files**: The plugin automatically detects if the field contains multiple files (array) and displays them individually. Each file gets its own delete button, and deleting a file removes only that specific file from the array.
+
 ## Parameters
 
-### `field(string $fieldName)` - Required
+### `field(string $fieldName)` - Required (if `path` not specified)
 
 Specifies the field name to read the file path from. This should match the database column or model attribute containing the file path.
 
@@ -94,6 +155,61 @@ Specifies the field name to read the file path from. This should match the datab
 FileOutput::make('preview')
     ->field('file_path')
 ```
+
+### `path(string|Closure $path)` - Required (if `field` not specified)
+
+Specifies the direct path to the file. Can be a string, array, or a Closure that returns the path (string or array). If `path` is specified, it takes priority over `field`.
+
+**With string:**
+```php
+FileOutput::make('preview')
+    ->path('documents/report.pdf')
+    ->disk('private')
+```
+
+**With Closure (single file):**
+```php
+FileOutput::make('preview')
+    ->path(fn ($record) => 'users/' . $record->user_id . '/avatar.jpg')
+    ->disk('public')
+```
+
+**With array (multiple files):**
+```php
+FileOutput::make('preview')
+    ->path(['documents/file1.pdf', 'documents/file2.pdf'])
+    ->disk('private')
+```
+
+**With Closure returning array (multiple files):**
+```php
+FileOutput::make('attachments_preview')
+    ->path(fn ($record) => $record->attachment_paths ?? [])
+    ->field('attachment_paths')  // ВАЖНО: добавьте field() для автообновления
+    ->disk('private')
+    ->onDelete(function ($filePath, $disk) {
+        // $filePath содержит путь к конкретному удаляемому файлу из массива
+        Storage::disk($disk)->delete($filePath);
+        // Массив автоматически обновляется (удаляется только этот файл)
+        // благодаря указанному field('attachment_paths')
+    })
+```
+
+**With public URL:**
+```php
+FileOutput::make('preview')
+    ->path('https://example.com/files/document.pdf')
+```
+
+> **Note**: You must specify either `field()` or `path()`. If both are specified, `path()` takes priority for **reading** the file path, but `field()` is still used for **automatic state updates** after deletion. 
+> 
+> **Best Practice for Multiple Files**: When using `path()` with arrays, also specify `field()` to enable automatic state updates:
+> ```php
+> ->path(fn ($record) => $record->files ?? [])
+> ->field('files')  // Enables automatic array updates on delete
+> ```
+> 
+> The `path()` method supports both single files (string) and multiple files (array).
 
 ### `disk(?string $disk)` - Optional
 
@@ -170,7 +286,9 @@ FileOutput::make('preview')
 
 4. **Public URLs**: If the path is already a public URL, it will be used directly.
 
-5. **Auto State Clearing**: After successful file deletion, the plugin automatically clears the state of the linked field (specified via `field()` method). This ensures that any associated FileUpload field is also cleared, preventing stale data.
+5. **Multiple Files**: The plugin automatically detects if the field contains an array of files and displays them individually. Each file gets its own preview and delete button.
+
+6. **Auto State Clearing**: After successful file deletion, the plugin automatically clears the state of the linked field (specified via `field()` method). For multiple files, only the deleted file is removed from the array. This ensures that any associated FileUpload field is also updated, preventing stale data.
 
 ## Requirements
 
