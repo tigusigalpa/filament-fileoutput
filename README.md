@@ -152,6 +152,34 @@ FileOutput::make('file_preview')
     ->disk('private')
 ```
 
+#### Multiple Files with Custom Labels
+
+```php
+FileOutput::make('documents')
+    ->path([
+        'contracts/main-contract.pdf' => 'Main Contract Document',
+        'contracts/addendum-1.pdf' => 'Addendum #1',
+        'contracts/addendum-2.pdf' => 'Addendum #2',
+        'invoices/invoice-2024.pdf' => 'Invoice 2024'
+    ])
+    ->disk('private')
+    ->label('Contract Documents')
+```
+
+#### Dynamic Labels with Closure
+
+```php
+FileOutput::make('user_documents')
+    ->path(function ($record) {
+        return [
+            $record->contract_path => 'Contract for ' . $record->client_name,
+            $record->invoice_path => 'Invoice #' . $record->invoice_number,
+            $record->receipt_path => 'Payment Receipt'
+        ];
+    })
+    ->disk('private')
+```
+
 ### 📦 Multiple Files
 
 #### Basic Multiple Files
@@ -346,6 +374,68 @@ FileOutput::make('contract')
     })
 ```
 
+### 📝 File Descriptions
+
+#### Basic Description
+
+```php
+FileOutput::make('contract')
+    ->field('contract_file')
+    ->disk('private')
+    ->description('Contract signed on 2024-01-15')
+```
+
+#### Dynamic Description
+
+```php
+FileOutput::make('document')
+    ->field('document_path')
+    ->disk('private')
+    ->description(fn ($record) => "Uploaded by {$record->user->name} on {$record->created_at->format('Y-m-d')}")
+```
+
+#### Multiple Files with Descriptions
+
+```php
+FileOutput::make('attachments')
+    ->field('attachments')
+    ->disk('private')
+    ->description([
+        'Main contract document',
+        'Signed addendum',
+        'Supporting documentation'
+    ])
+```
+
+#### Dynamic Multiple Descriptions
+
+```php
+FileOutput::make('certificates')
+    ->field('certificates')
+    ->disk('private')
+    ->description(function ($state) {
+        if (is_array($state)) {
+            return array_map(function($path, $index) {
+                return 'Certificate #' . ($index + 1) . ' - ' . basename($path);
+            }, $state, array_keys($state));
+        }
+        return null;
+    })
+```
+
+#### Description Based on Other Fields
+
+```php
+FileOutput::make('invoice')
+    ->field('invoice_file')
+    ->disk('private')
+    ->description(function ($record, $get) {
+        $status = $get('payment_status');
+        $date = $record->invoice_date->format('d.m.Y');
+        return "Invoice from {$date} - Status: {$status}";
+    })
+```
+
 ### 📊 Advanced Multiple Files
 
 #### Limit Deletion (Keep at Least One)
@@ -412,6 +502,7 @@ Specifies the direct path to the file. Supports:
 
 - **String**: Direct file path
 - **Array**: Multiple file paths
+- **Associative Array**: File paths with custom labels (path => label)
 - **Closure**: Dynamic path (can return string or array)
 - **Public URL**: External file URL
 
@@ -419,8 +510,15 @@ Specifies the direct path to the file. Supports:
 // String
 ->path('documents/report.pdf')
 
-// Array
+// Array (indexed)
 ->path(['file1.pdf', 'file2.pdf'])
+
+// Associative Array with custom labels
+->path([
+    'contracts/contract-2024.pdf' => 'Main Contract 2024',
+    'contracts/addendum.pdf' => 'Contract Addendum',
+    'documents/invoice.pdf' => 'Invoice #12345'
+])
 
 // Closure (single)
 ->path(fn ($record) => 'users/' . $record->user_id . '/avatar.jpg')
@@ -428,10 +526,18 @@ Specifies the direct path to the file. Supports:
 // Closure (multiple)
 ->path(fn ($record) => $record->files ?? [])
 
+// Closure with labels
+->path(fn ($record) => [
+    $record->contract_path => 'Contract for ' . $record->name,
+    $record->invoice_path => 'Invoice #' . $record->invoice_number
+])
+
 // Public URL
 ->path('https://example.com/file.pdf')
 ```
 
+> 💡 **File Labels**: Use associative arrays to set custom labels for download links. If no label is provided, the default "Download File" text will be used.
+>
 > 💡 **Priority**: `path()` takes priority for reading, but `field()` is still used for auto-updates.
 >
 > ⚠️ **Best Practice**: When using `path()` with arrays, also specify `field()` for automatic state updates:
@@ -487,6 +593,55 @@ Shows the delete button (default). Useful for conditional display.
 ```php
 ->showDeleteButton(fn () => auth()->user()->isAdmin())
 ```
+
+#### `description(string|array|Closure $description)`
+
+**Optional**
+
+Adds a description text for the file(s). Supports:
+
+- **String**: Single description for one file
+- **Array**: Multiple descriptions (one per file) for multiple files
+- **Closure**: Dynamic description based on record/state
+
+```php
+// String (single file)
+->description('Contract signed on 2024-01-15')
+
+// Array (multiple files)
+->description([
+    'First document description',
+    'Second document description',
+    'Third document description'
+])
+
+// Closure with record
+->description(fn ($record) => "Document for: {$record->name}")
+
+// Closure with state
+->description(function ($state) {
+    if (is_array($state)) {
+        return array_map(fn($path) => 'File: ' . basename($path), $state);
+    }
+    return 'Single file uploaded';
+})
+
+// Closure with multiple parameters
+->description(function ($record, $state, $get) {
+    $type = $get('document_type');
+    return "Document type: {$type} for {$record->name}";
+})
+```
+
+**Available Closure Parameters:**
+
+- `$record` - Current model/record
+- `$state` - Current field value (file path or array of paths)
+- `$component` - The FileOutput component instance
+- `$get` - Function to get other field values: `$get('field_name')`
+- `$set` - Function to set other field values: `$set('field_name', $value)`
+
+> 💡 **Tip**: For multiple files, the array index matches the file index. Return an array of descriptions to show individual descriptions for each file.
 
 ---
 

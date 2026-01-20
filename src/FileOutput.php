@@ -3,6 +3,7 @@
 namespace Tigusigalpa\FileOutput;
 
 use Closure;
+use Exception;
 use Filament\Forms\Components\Actions\Action;
 use Filament\Forms\Components\Field;
 use Illuminate\Support\Facades\Storage;
@@ -29,12 +30,9 @@ class FileOutput extends Field
 
     protected ?array $files = null;
 
-    public function disk(?string $disk): static
-    {
-        $this->disk = $disk;
+    protected ?array $fileLabels = null;
 
-        return $this;
-    }
+    protected string|array|Closure|null $description = null;
 
     public function field(string $fieldName): static
     {
@@ -43,7 +41,7 @@ class FileOutput extends Field
         return $this;
     }
 
-    public function path(string|Closure $path): static
+    public function path(string|array|Closure $path): static
     {
         $this->pathValue = $path;
 
@@ -71,9 +69,11 @@ class FileOutput extends Field
         return $this;
     }
 
-    public function getDisk(): ?string
+    public function description(string|array|Closure $description): static
     {
-        return $this->disk;
+        $this->description = $description;
+
+        return $this;
     }
 
     public function getFieldName(): ?string
@@ -105,7 +105,7 @@ class FileOutput extends Field
 
         if ($this->disk) {
             $storage = Storage::disk($this->disk);
-            
+
             if (!$storage->exists($path)) {
                 return null;
             }
@@ -113,7 +113,7 @@ class FileOutput extends Field
             if (method_exists($storage, 'temporaryUrl')) {
                 try {
                     $this->fileUrl = $storage->temporaryUrl($path, now()->addMinutes(5));
-                } catch (\Exception $e) {
+                } catch (Exception $e) {
                     $this->fileUrl = route('filament-fileoutput.download', [
                         'disk' => $this->disk,
                         'path' => base64_encode($path),
@@ -148,7 +148,7 @@ class FileOutput extends Field
         }
 
         $record = $this->getRecord();
-        
+
         if (!$record) {
             $state = $this->getState();
             if (is_string($state) || is_array($state)) {
@@ -167,6 +167,13 @@ class FileOutput extends Field
         $this->filePath = $path;
 
         return $this->filePath;
+    }
+
+    public function disk(?string $disk): static
+    {
+        $this->disk = $disk;
+
+        return $this;
     }
 
     public function isImage(): bool
@@ -193,39 +200,17 @@ class FileOutput extends Field
     public function hasFile(): bool
     {
         $path = $this->getFilePath();
-        
+
         if (is_array($path)) {
             return !empty($path);
         }
-        
+
         return $path !== null;
     }
 
     public function isMultiple(): bool
     {
         return is_array($this->getFilePath());
-    }
-
-    public function getFiles(): array
-    {
-        if ($this->files !== null) {
-            return $this->files;
-        }
-
-        $path = $this->getFilePath();
-
-        if (!$path) {
-            $this->files = [];
-            return $this->files;
-        }
-
-        if (is_string($path)) {
-            $this->files = [$path];
-        } else {
-            $this->files = $path;
-        }
-
-        return $this->files;
     }
 
     public function getFileUrlForPath(string $path): ?string
@@ -240,7 +225,7 @@ class FileOutput extends Field
 
         if ($this->disk) {
             $storage = Storage::disk($this->disk);
-            
+
             if (!$storage->exists($path)) {
                 return null;
             }
@@ -248,7 +233,7 @@ class FileOutput extends Field
             if (method_exists($storage, 'temporaryUrl')) {
                 try {
                     return $storage->temporaryUrl($path, now()->addMinutes(5));
-                } catch (\Exception $e) {
+                } catch (Exception $e) {
                     return route('filament-fileoutput.download', [
                         'disk' => $this->disk,
                         'path' => base64_encode($path),
@@ -272,13 +257,80 @@ class FileOutput extends Field
         return in_array($extension, $imageExtensions);
     }
 
+    public function getDescription(?string $filePath = null): ?string
+    {
+        if ($this->description === null) {
+            return null;
+        }
+
+        $description = $this->evaluate($this->description);
+
+        if (is_string($description)) {
+            return $description;
+        }
+
+        if (is_array($description) && $filePath !== null) {
+            $files = $this->getFiles();
+            $index = array_search($filePath, $files);
+
+            if ($index !== false && isset($description[$index])) {
+                return $description[$index];
+            }
+        }
+
+        return null;
+    }
+
+    public function getFiles(): array
+    {
+        if ($this->files !== null) {
+            return $this->files;
+        }
+
+        $path = $this->getFilePath();
+
+        if (!$path) {
+            $this->files = [];
+            return $this->files;
+        }
+
+        if (is_string($path)) {
+            $this->files = [$path];
+        } elseif ($this->isAssociativeArray($path)) {
+            $this->fileLabels = $path;
+            $this->files = array_keys($path);
+        } else {
+            $this->files = $path;
+        }
+
+        return $this->files;
+    }
+
+    public function getFileLabel(string $filePath): string
+    {
+        if ($this->fileLabels !== null && isset($this->fileLabels[$filePath])) {
+            return $this->fileLabels[$filePath];
+        }
+
+        return __('Download File');
+    }
+
+    protected function isAssociativeArray($array): bool
+    {
+        if (!is_array($array) || empty($array)) {
+            return false;
+        }
+
+        return array_keys($array) !== range(0, count($array) - 1);
+    }
+
     public function getDeleteAction(?string $filePathToDelete = null): ?Action
     {
         if (!$this->deleteCallback || !$this->showDeleteButton) {
             return null;
         }
 
-        return Action::make($filePathToDelete ? 'deleteFile_' . md5($filePathToDelete) : 'deleteFile')
+        return Action::make($filePathToDelete ? 'deleteFile_'.md5($filePathToDelete) : 'deleteFile')
             ->label(__('Delete'))
             ->icon('heroicon-o-trash')
             ->color('danger')
@@ -286,24 +338,29 @@ class FileOutput extends Field
             ->action(function () use ($filePathToDelete) {
                 $filePath = $filePathToDelete ?? $this->getFilePath();
                 $disk = $this->getDisk();
-                
+
                 call_user_func($this->deleteCallback, $filePath, $disk);
-                
+
                 if ($this->fieldName) {
                     $livewire = $this->getLivewire();
                     $currentValue = data_get($livewire, $this->fieldName);
-                    
+
                     if ($filePathToDelete && is_array($currentValue)) {
                         $newValue = array_values(array_filter($currentValue, fn($path) => $path !== $filePathToDelete));
                         data_set($livewire, $this->fieldName, empty($newValue) ? null : $newValue);
                     } else {
                         data_set($livewire, $this->fieldName, null);
                     }
-                    
+
                     if (method_exists($livewire, 'refreshFormData')) {
                         $livewire->refreshFormData([$this->fieldName]);
                     }
                 }
             });
+    }
+
+    public function getDisk(): ?string
+    {
+        return $this->disk;
     }
 }
