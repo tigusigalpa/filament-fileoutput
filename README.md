@@ -98,7 +98,7 @@ public static function form(Form $form): Form
                 ->field('document')
                 ->disk('private')
                 ->label('Current Document')
-                ->onDelete(function ($filePath, $disk) {
+                ->onDelete(function ($record, $filePath, $disk) {
                     Storage::disk($disk)->delete($filePath);
                 }),
         ]);
@@ -205,7 +205,7 @@ FileOutput::make('attachments_preview')
     ->field('attachments')
     ->disk('private')
     ->label('Current Attachments')
-    ->onDelete(function ($filePath, $disk) {
+    ->onDelete(function ($record, $filePath, $disk) {
         Storage::disk($disk)->delete($filePath);
         // Auto-updates array - removes only this file
     })
@@ -217,7 +217,7 @@ FileOutput::make('attachments_preview')
 FileOutput::make('documents')
     ->path(['contracts/file1.pdf', 'contracts/file2.pdf'])
     ->disk('private')
-    ->onDelete(function ($filePath, $disk) {
+    ->onDelete(function ($record, $filePath, $disk) {
         Storage::disk($disk)->delete($filePath);
     })
 ```
@@ -229,7 +229,7 @@ FileOutput::make('photos_preview')
     ->path(fn ($record) => $record->photos ?? [])
     ->field('photos')  // ⚠️ Important for auto-sync
     ->disk('public')
-    ->onDelete(function ($filePath, $disk) {
+    ->onDelete(function ($record, $filePath, $disk) {
         Storage::disk($disk)->delete($filePath);
         
         // Update database
@@ -251,7 +251,7 @@ FileOutput::make('photos_preview')
 FileOutput::make('document')
     ->field('document')
     ->disk('private')
-    ->onDelete(fn ($filePath, $disk) => Storage::disk($disk)->delete($filePath))
+    ->onDelete(fn ($record, $filePath, $disk) => Storage::disk($disk)->delete($filePath))
     ->hideDeleteButton()
 ```
 
@@ -261,7 +261,7 @@ FileOutput::make('document')
 // Hide for locked records
 FileOutput::make('file')
     ->field('file_path')
-    ->onDelete(fn ($filePath, $disk) => Storage::disk($disk)->delete($filePath))
+    ->onDelete(fn ($record, $filePath, $disk) => Storage::disk($disk)->delete($filePath))
     ->hideDeleteButton(fn ($record) => $record->is_locked)
 ```
 
@@ -271,7 +271,7 @@ FileOutput::make('file')
 FileOutput::make('sensitive_doc')
     ->field('document')
     ->disk('private')
-    ->onDelete(fn ($filePath, $disk) => Storage::disk($disk)->delete($filePath))
+    ->onDelete(fn ($record, $filePath, $disk) => Storage::disk($disk)->delete($filePath))
     ->showDeleteButton(fn () => auth()->user()->isAdmin())
 ```
 
@@ -280,7 +280,7 @@ FileOutput::make('sensitive_doc')
 ```php
 FileOutput::make('invoice')
     ->field('invoice_file')
-    ->onDelete(fn ($filePath, $disk) => Storage::disk($disk)->delete($filePath))
+    ->onDelete(fn ($record, $filePath, $disk) => Storage::disk($disk)->delete($filePath))
     ->showDeleteButton(function ($record) {
         $isOwnerOrAdmin = auth()->user()->isAdmin() || 
                           auth()->id() === $record->user_id;
@@ -297,7 +297,7 @@ FileOutput::make('product_images')
     ->field('images')
     ->disk('public')
     ->label('Product Gallery')
-    ->onDelete(function ($filePath, $disk) {
+    ->onDelete(function ($record, $filePath, $disk) {
         // Delete original
         Storage::disk($disk)->delete($filePath);
         
@@ -305,6 +305,9 @@ FileOutput::make('product_images')
         $directory = dirname($filePath);
         $filename = basename($filePath);
         Storage::disk($disk)->delete($directory . '/thumbs/' . $filename);
+        
+        // Update record
+        $record->increment('images_deleted_count');
     })
 ```
 
@@ -315,12 +318,13 @@ FileOutput::make('backup')
     ->field('backup_path')
     ->disk('s3')
     ->label('Backup File')
-    ->onDelete(function ($filePath, $disk) {
+    ->onDelete(function ($record, $filePath, $disk) {
         Storage::disk($disk)->delete($filePath);
         
         Log::info('Backup deleted', [
             'path' => $filePath,
             'user' => auth()->id(),
+            'record_id' => $record?->id,
         ]);
     })
 ```
@@ -331,7 +335,7 @@ FileOutput::make('backup')
 FileOutput::make('document')
     ->field('document')
     ->disk('private')
-    ->onDelete(function ($filePath, $disk) {
+    ->onDelete(function ($record, $filePath, $disk) {
         try {
             if (Storage::disk($disk)->exists($filePath)) {
                 Storage::disk($disk)->delete($filePath);
@@ -352,10 +356,69 @@ FileOutput::make('document')
                 
             Log::error('File deletion error', [
                 'path' => $filePath,
+                'record_id' => $record?->id,
                 'error' => $e->getMessage(),
             ]);
         }
     })
+```
+
+### 💬 Custom Delete Confirmation
+
+#### Basic Custom Confirmation
+
+```php
+FileOutput::make('contract')
+    ->field('contract_file')
+    ->disk('private')
+    ->onDelete(function ($record, $filePath, $disk) {
+        Storage::disk($disk)->delete($filePath);
+    })
+    ->deleteConfirmationTitle('Delete Contract?')
+    ->deleteConfirmationDescription('This action cannot be undone. The contract file will be permanently deleted.')
+```
+
+#### Dynamic Confirmation Message
+
+```php
+FileOutput::make('document')
+    ->field('document_path')
+    ->disk('private')
+    ->onDelete(function ($record, $filePath, $disk) {
+        Storage::disk($disk)->delete($filePath);
+    })
+    ->deleteConfirmationTitle(fn ($record) => "Delete {$record->name}?")
+    ->deleteConfirmationDescription(fn ($record) => "Are you sure you want to delete the document for {$record->client_name}? This action cannot be undone.")
+```
+
+#### Confirmation for Critical Files
+
+```php
+FileOutput::make('sensitive_document')
+    ->field('document')
+    ->disk('private')
+    ->onDelete(function ($record, $filePath, $disk) {
+        Storage::disk($disk)->delete($filePath);
+        Log::warning('Sensitive document deleted', [
+            'path' => $filePath,
+            'record_id' => $record?->id
+        ]);
+    })
+    ->deleteLabel('Remove Document')
+    ->deleteConfirmationTitle('⚠️ Delete Sensitive Document?')
+    ->deleteConfirmationDescription('WARNING: This is a sensitive document. Deletion will be logged and cannot be undone. Please confirm you want to proceed.')
+```
+
+#### Custom Button Label
+
+```php
+FileOutput::make('attachment')
+    ->field('attachment_path')
+    ->disk('private')
+    ->onDelete(function ($record, $filePath, $disk) {
+        Storage::disk($disk)->delete($filePath);
+    })
+    ->deleteLabel('Remove Attachment')
 ```
 
 ### 🎭 Conditional Visibility
@@ -365,13 +428,42 @@ FileOutput::make('contract')
     ->field('contract_file')
     ->disk('private')
     ->visible(fn ($record) => $record?->contract_file !== null)
-    ->onDelete(function ($filePath, $disk) {
+    ->onDelete(function ($record, $filePath, $disk) {
         Storage::disk($disk)->delete($filePath);
-        $this->record->update([
+        $record->update([
             'contract_file' => null,
             'contract_signed_at' => null,
         ]);
     })
+```
+
+### 🎨 Custom Empty State
+
+#### Basic Custom Message
+
+```php
+FileOutput::make('document')
+    ->field('document_path')
+    ->disk('private')
+    ->emptyState('No document has been uploaded yet')
+```
+
+#### Dynamic Empty State
+
+```php
+FileOutput::make('contract')
+    ->field('contract_file')
+    ->disk('private')
+    ->emptyState(fn ($record) => "No contract uploaded for {$record->client_name}")
+```
+
+#### Multilingual Empty State
+
+```php
+FileOutput::make('invoice')
+    ->field('invoice_path')
+    ->disk('private')
+    ->emptyState(__('invoices.no_file_uploaded'))
 ```
 
 ### 📝 File Descriptions
@@ -394,7 +486,7 @@ FileOutput::make('document')
     ->description(fn ($record) => "Uploaded by {$record->user->name} on {$record->created_at->format('Y-m-d')}")
 ```
 
-#### Multiple Files with Descriptions
+#### Multiple Files with Descriptions (Indexed Array)
 
 ```php
 FileOutput::make('attachments')
@@ -404,6 +496,23 @@ FileOutput::make('attachments')
         'Main contract document',
         'Signed addendum',
         'Supporting documentation'
+    ])
+```
+
+#### Multiple Files with Descriptions (Associative Array)
+
+```php
+FileOutput::make('documents')
+    ->path([
+        'contracts/contract.pdf' => 'Main Contract',
+        'contracts/addendum.pdf' => 'Addendum',
+        'invoices/invoice.pdf' => 'Invoice'
+    ])
+    ->disk('private')
+    ->description([
+        'contracts/contract.pdf' => 'Signed on 2024-01-15',
+        'contracts/addendum.pdf' => 'Additional terms and conditions',
+        'invoices/invoice.pdf' => 'Payment due: 2024-02-01'
     ])
 ```
 
@@ -457,7 +566,7 @@ FileOutput::make('documents')
 FileOutput::make('certificates')
     ->field('certificates')
     ->disk('private')
-    ->onDelete(function ($filePath, $disk) {
+    ->onDelete(function ($record, $filePath, $disk) {
         Storage::disk($disk)->delete($filePath);
         
         $certificates = array_values(array_filter(
@@ -560,13 +669,33 @@ Specifies the storage disk (public, private, s3, etc.).
 
 **Optional**
 
-Adds delete button with callback. Receives `$filePath` and `$disk` parameters.
+Adds delete button with callback. Receives `$record`, `$filePath`, and `$disk` parameters.
 
 ```php
-->onDelete(function ($filePath, $disk) {
+->onDelete(function ($record, $filePath, $disk) {
     Storage::disk($disk)->delete($filePath);
 })
+
+// With record usage
+->onDelete(function ($record, $filePath, $disk) {
+    Storage::disk($disk)->delete($filePath);
+    
+    // Update record
+    $record->update(['file_path' => null]);
+    
+    // Log deletion
+    Log::info('File deleted', [
+        'file' => $filePath,
+        'user' => auth()->id(),
+        'record_id' => $record->id
+    ]);
+})
 ```
+
+**Parameters:**
+- `$record` - Current model/record instance (can be null)
+- `$filePath` - Path to the file being deleted
+- `$disk` - Storage disk name
 
 > 🔄 **Auto-Sync**: Field state is automatically cleared after deletion (if `field()` is specified).
 
@@ -594,6 +723,65 @@ Shows the delete button (default). Useful for conditional display.
 ->showDeleteButton(fn () => auth()->user()->isAdmin())
 ```
 
+#### `deleteLabel(string|Closure $label)`
+
+**Optional**
+
+Sets a custom label for the delete button.
+
+```php
+// Static label
+->deleteLabel('Remove')
+
+// Dynamic label
+->deleteLabel(fn () => 'Remove File')
+```
+
+#### `emptyState(string|Closure $message)`
+
+**Optional**
+
+Sets a custom message to display when no file is uploaded. Default: "No file uploaded".
+
+```php
+// Static message
+->emptyState('No document available')
+
+// Dynamic message
+->emptyState(fn ($record) => "No file uploaded for {$record->name}")
+
+// Multilingual
+->emptyState(__('custom.no_file'))
+```
+
+#### `deleteConfirmationTitle(string|Closure $title)`
+
+**Optional**
+
+Sets a custom title for the delete confirmation modal.
+
+```php
+// Static title
+->deleteConfirmationTitle('Delete File?')
+
+// Dynamic title
+->deleteConfirmationTitle(fn () => 'Delete this document?')
+```
+
+#### `deleteConfirmationDescription(string|Closure $description)`
+
+**Optional**
+
+Sets a custom description for the delete confirmation modal.
+
+```php
+// Static description
+->deleteConfirmationDescription('This action cannot be undone.')
+
+// Dynamic description
+->deleteConfirmationDescription(fn ($record) => "Are you sure you want to delete {$record->name}?")
+```
+
 #### `description(string|array|Closure $description)`
 
 **Optional**
@@ -601,18 +789,26 @@ Shows the delete button (default). Useful for conditional display.
 Adds a description text for the file(s). Supports:
 
 - **String**: Single description for one file
-- **Array**: Multiple descriptions (one per file) for multiple files
+- **Indexed Array**: Multiple descriptions (one per file) for multiple files
+- **Associative Array**: Descriptions mapped by file path (path => description)
 - **Closure**: Dynamic description based on record/state
 
 ```php
 // String (single file)
 ->description('Contract signed on 2024-01-15')
 
-// Array (multiple files)
+// Indexed Array (multiple files)
 ->description([
     'First document description',
     'Second document description',
     'Third document description'
+])
+
+// Associative Array (path => description)
+->description([
+    'contracts/contract.pdf' => 'Main contract signed on 2024-01-15',
+    'contracts/addendum.pdf' => 'Additional terms',
+    'invoices/invoice.pdf' => 'Payment due: 2024-02-01'
 ])
 
 // Closure with record
@@ -641,7 +837,7 @@ Adds a description text for the file(s). Supports:
 - `$get` - Function to get other field values: `$get('field_name')`
 - `$set` - Function to set other field values: `$set('field_name', $value)`
 
-> 💡 **Tip**: For multiple files, the array index matches the file index. Return an array of descriptions to show individual descriptions for each file.
+> 💡 **Tip**: For multiple files, you can use either indexed arrays (matched by position) or associative arrays (matched by file path). Associative arrays are recommended when using `path()` with custom labels.
 
 ---
 

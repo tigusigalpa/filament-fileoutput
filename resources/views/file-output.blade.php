@@ -32,9 +32,6 @@
                                         </svg>
                                         {{ $getFileLabel($filePath) }}
                                     </a>
-                                    <div class="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                                        {{ basename($filePath) }}
-                                    </div>
                                     @if($getDescription($filePath))
                                         <div class="text-sm text-gray-600 dark:text-gray-300 mt-2">
                                             {{ $getDescription($filePath) }}
@@ -94,7 +91,7 @@
             @endif
         @else
             <div class="text-sm text-gray-500 dark:text-gray-400 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                {{ __('No file uploaded') }}
+                {{ $getEmptyState() }}
             </div>
         @endif
     </div>

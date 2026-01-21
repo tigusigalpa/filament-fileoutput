@@ -16,6 +16,15 @@ class FileOutput extends Field
 
     protected ?string $fieldName = null;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->registerActions([
+            fn (): Action => $this->makeDeleteAction(),
+        ]);
+    }
+
     protected string|Closure|null $pathValue = null;
 
     protected ?Closure $deleteCallback = null;
@@ -26,13 +35,21 @@ class FileOutput extends Field
 
     protected ?string $fileUrl = null;
 
-    protected ?string $filePath = null;
+    protected string|array|null $filePath = null;
 
     protected ?array $files = null;
 
     protected ?array $fileLabels = null;
 
     protected string|array|Closure|null $description = null;
+
+    protected string|Closure|null $deleteConfirmationTitle = null;
+
+    protected string|Closure|null $deleteConfirmationDescription = null;
+
+    protected string|Closure|null $deleteLabel = null;
+
+    protected string|Closure|null $emptyState = null;
 
     public function field(string $fieldName): static
     {
@@ -74,6 +91,43 @@ class FileOutput extends Field
         $this->description = $description;
 
         return $this;
+    }
+
+    public function deleteConfirmationTitle(string|Closure $title): static
+    {
+        $this->deleteConfirmationTitle = $title;
+
+        return $this;
+    }
+
+    public function deleteConfirmationDescription(string|Closure $description): static
+    {
+        $this->deleteConfirmationDescription = $description;
+
+        return $this;
+    }
+
+    public function deleteLabel(string|Closure $label): static
+    {
+        $this->deleteLabel = $label;
+
+        return $this;
+    }
+
+    public function emptyState(string|Closure $message): static
+    {
+        $this->emptyState = $message;
+
+        return $this;
+    }
+
+    public function getEmptyState(): string
+    {
+        if ($this->emptyState !== null) {
+            return $this->evaluate($this->emptyState);
+        }
+
+        return __('No file uploaded');
     }
 
     public function getFieldName(): ?string
@@ -270,6 +324,12 @@ class FileOutput extends Field
         }
 
         if (is_array($description) && $filePath !== null) {
+            // Check if it's an associative array with path as key
+            if (isset($description[$filePath])) {
+                return $description[$filePath];
+            }
+
+            // Fallback to indexed array
             $files = $this->getFiles();
             $index = array_search($filePath, $files);
 
@@ -324,22 +384,28 @@ class FileOutput extends Field
         return array_keys($array) !== range(0, count($array) - 1);
     }
 
-    public function getDeleteAction(?string $filePathToDelete = null): ?Action
+    protected function makeDeleteAction(): Action
     {
-        if (!$this->deleteCallback || !$this->showDeleteButton) {
-            return null;
-        }
-
-        return Action::make($filePathToDelete ? 'deleteFile_'.md5($filePathToDelete) : 'deleteFile')
-            ->label(__('Delete'))
+        return Action::make('deleteFile')
+            ->label($this->deleteLabel !== null ? $this->evaluate($this->deleteLabel) : __('Delete'))
             ->icon('heroicon-o-trash')
             ->color('danger')
             ->requiresConfirmation()
-            ->action(function () use ($filePathToDelete) {
+            ->modalHeading($this->deleteConfirmationTitle !== null 
+                ? $this->evaluate($this->deleteConfirmationTitle) 
+                : __('Delete file?'))
+            ->modalDescription($this->deleteConfirmationDescription !== null 
+                ? $this->evaluate($this->deleteConfirmationDescription) 
+                : null)
+            ->action(function (array $arguments) {
+                $filePathToDelete = $arguments['filePath'] ?? null;
                 $filePath = $filePathToDelete ?? $this->getFilePath();
                 $disk = $this->getDisk();
+                $record = $this->getRecord();
 
-                call_user_func($this->deleteCallback, $filePath, $disk);
+                if ($this->deleteCallback) {
+                    call_user_func($this->deleteCallback, $record, $filePath, $disk);
+                }
 
                 if ($this->fieldName) {
                     $livewire = $this->getLivewire();
@@ -357,6 +423,35 @@ class FileOutput extends Field
                     }
                 }
             });
+    }
+
+    public function getDeleteAction(?string $filePathToDelete = null): ?Action
+    {
+        if (!$this->deleteCallback || !$this->showDeleteButton) {
+            return null;
+        }
+
+        return $this->getAction('deleteFile')
+            ->arguments(['filePath' => $filePathToDelete]);
+    }
+
+    public function getDeleteButtonLabel(): string
+    {
+        return $this->deleteLabel !== null ? $this->evaluate($this->deleteLabel) : __('Delete');
+    }
+
+    public function getDeleteConfirmationTitle(): string
+    {
+        return $this->deleteConfirmationTitle !== null 
+            ? $this->evaluate($this->deleteConfirmationTitle) 
+            : __('Delete file?');
+    }
+
+    public function getDeleteConfirmationDescription(): ?string
+    {
+        return $this->deleteConfirmationDescription !== null 
+            ? $this->evaluate($this->deleteConfirmationDescription) 
+            : null;
     }
 
     public function getDisk(): ?string
